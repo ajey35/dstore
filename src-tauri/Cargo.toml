@@ -84,7 +84,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 
 # Zip archive support for ffmpeg extraction (Windows)
-zip = "2.2"
+zip = "4.6"
 
 # BitTorrent engine
 librqbit = "8"
