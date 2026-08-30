@@ -33,14 +33,14 @@
     position: relative;
     z-index: 1;
     width: 100%;
-    max-width: 420px;
+    max-width: 460px;
 }
 
 .login-card {
     border: 1px solid rgba(120, 164, 198, 0.18);
     border-radius: 24px;
     background: linear-gradient(180deg, rgba(12, 22, 32, 0.98), rgba(6, 14, 22, 0.98));
-    padding: 48px 40px;
+    padding: 42px 40px 32px;
     box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
     backdrop-filter: blur(10px);
 }
@@ -81,8 +81,18 @@
 }
 
 .login-content {
-    margin-bottom: 30px;
+    margin-bottom: 26px;
 }
+
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; gap: 4px; border-radius: 12px; background: rgba(0, 0, 0, .24); margin-bottom: 22px; }
+.auth-tabs button { border: 0; border-radius: 9px; padding: 10px; color: #9bb7c9; background: transparent; font-size: .86rem; font-weight: 650; }
+.auth-tabs button.active { color: #ebf7ff; background: rgba(115, 213, 255, .14); box-shadow: inset 0 0 0 1px rgba(115, 213, 255, .18); }
+.auth-intro { color: #9bb7c9; line-height: 1.5; font-size: .9rem; margin: 0 0 20px; }
+.field-label { color: #c6dbe8; display: grid; gap: 8px; font-size: .82rem; font-weight: 650; margin: 0 0 16px; }
+.field-label input { width: 100%; color: #ebf7ff; background: rgba(0, 0, 0, .22); border: 1px solid rgba(120, 164, 198, .22); border-radius: 10px; padding: 12px; outline: none; }
+.field-label input:focus { border-color: #73d5ff; box-shadow: 0 0 0 3px rgba(115, 213, 255, .12); }
+.connected-node { align-items: center; color: #9bb7c9; display: flex; gap: 8px; font-size: .76rem; justify-content: center; margin-top: 16px; }
+.online-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; background: #63f0b4; box-shadow: 0 0 0 4px rgba(99, 240, 180, .12); }
 
 .login-loading {
     text-align: center;
@@ -227,7 +237,7 @@
 .login-footer p {
     margin: 0;
     color: #9bb7c9;
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     line-height: 1.6;
 }
 

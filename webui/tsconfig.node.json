@@ -1,12 +1,15 @@
 {
     "compilerOptions": {
         "composite": true,
+        "outDir": "/tmp/archivist-webui-vite-build",
+        "tsBuildInfoFile": "/tmp/archivist-webui-node.tsbuildinfo",
         "skipLibCheck": true,
         "module": "ESNext",
         "moduleResolution": "Node",
         "allowSyntheticDefaultImports": true
     },
     "include": [
-        "vite.config.ts"
+        "vite.config.ts",
+        "vite-proxy-plugin.ts"
     ]
 }

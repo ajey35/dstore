@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpload } from '../hooks/useUpload';
 import { useStorageFiles, useSpaceInfo, usePeers } from '../hooks/useArchivistApi';
@@ -15,6 +15,8 @@ export function Dashboard() {
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [expandedFile, setExpandedFile] = useState<string | null>(null);
+    const [query, setQuery] = useState('');
+    const [dragActive, setDragActive] = useState(false);
 
     // Refetch files when upload completes
     useEffect(() => {
@@ -26,20 +28,24 @@ export function Dashboard() {
         }
     }, [activeUploads, refetchFiles]);
 
+    const addSelectedFiles = useCallback((selected: FileList | File[]) => {
+            if (!selected) return;
+            Array.from(selected).forEach((file) => {
+                addUpload(file);
+            });
+    }, [addUpload]);
+
     const handleFileSelect = useCallback(
         (event: React.ChangeEvent<HTMLInputElement>) => {
             const selected = event.target.files;
             if (!selected) return;
-
-            Array.from(selected).forEach((file) => {
-                addUpload(file);
-            });
+            addSelectedFiles(selected);
 
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
         },
-        [addUpload],
+        [addSelectedFiles],
     );
 
     const handleDownload = useCallback(async (file: StorageFile) => {
@@ -86,19 +92,22 @@ export function Dashboard() {
         return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
     };
 
+    const filteredFiles = useMemo(() => (files || []).filter((file) => file.name.toLowerCase().includes(query.toLowerCase())), [files, query]);
+    const displayName = user?.name || user?.email?.split('@')[0] || 'there';
+
     return (
         <div className="dashboard-shell">
             <header className="dashboard-header">
                 <div className="header-left">
-                    <h1>Dashboard</h1>
-                    <p className="header-subtitle">Manage your decentralized storage</p>
+                    <div className="brand-lockup"><span className="brand-symbol">⌁</span><span>archivist</span></div>
+                    <p className="header-subtitle">Your private storage space</p>
                 </div>
                 <div className="header-right">
                     <button
                         className="btn-secondary"
                         onClick={() => fileInputRef.current?.click()}
                     >
-                        Upload Files
+                        Upload files
                     </button>
                     <button className="btn-ghost" onClick={logout}>
                         Logout
@@ -107,6 +116,20 @@ export function Dashboard() {
             </header>
 
             <div className="dashboard-grid">
+                <section className="welcome-row">
+                    <div><p className="eyebrow">Personal vault</p><h1>Good to see you, {displayName}.</h1><p>Keep every important file available from anywhere.</p></div>
+                    <div className="network-pill"><span className="online-dot" /> Connected to network</div>
+                </section>
+                <section
+                    className={`dropzone ${dragActive ? 'drag-active' : ''}`}
+                    onDragEnter={(e) => { e.preventDefault(); setDragActive(true); }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                    onDrop={(e) => { e.preventDefault(); setDragActive(false); addSelectedFiles(e.dataTransfer.files); }}
+                    onClick={() => fileInputRef.current?.click()}
+                    role="button" tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+                ><span className="dropzone-icon">↑</span><div><strong>Drop files here to store them securely</strong><span>or choose files from your device</span></div><button className="btn-secondary" type="button">Choose files</button></section>
                 {/* Overview Cards */}
                 <section className="section-row">
                     <div className="card stat-card">
@@ -222,12 +245,13 @@ export function Dashboard() {
                 {/* Files List */}
                 <section className="card files-card">
                     <div className="card-header">
-                        <h3>Your Files {filesLoading && <span className="loading-indicator">…</span>}</h3>
+                        <h3>Your files {filesLoading && <span className="loading-indicator">…</span>} <span className="file-count">{files?.length || 0}</span></h3>
+                        <input className="file-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search files" aria-label="Search files" />
                     </div>
 
-                    {files && files.length > 0 ? (
+                    {filteredFiles.length > 0 ? (
                         <div className="files-list">
-                            {files.map((file) => (
+                            {filteredFiles.map((file) => (
                                 <div
                                     key={file.cid}
                                     className={`file-item ${expandedFile === file.cid ? 'expanded' : ''}`}
@@ -253,6 +277,7 @@ export function Dashboard() {
                                         <div className="file-actions">
                                             <button
                                                 className="btn-icon"
+                                                aria-label={`Download ${file.name}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     handleDownload(file);
@@ -262,6 +287,7 @@ export function Dashboard() {
                                             </button>
                                             <button
                                                 className="btn-icon"
+                                                aria-label={`Delete ${file.name}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     handleDelete(file);
@@ -295,7 +321,7 @@ export function Dashboard() {
                         </div>
                     ) : (
                         <div className="empty-state">
-                            <p>No files yet</p>
+                            <p>{query ? 'No matching files' : 'Your vault is ready for its first file.'}</p>
                             <button
                                 className="btn-primary"
                                 onClick={() => fileInputRef.current?.click()}

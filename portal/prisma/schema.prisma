@@ -1,0 +1,102 @@
+// Prisma Schema for Archivist Central Customer Portal
+// PostgreSQL Database Provider
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  avatarUrl    String?
+  role         String   @default("USER") // USER, ADMIN
+  quotaBytes   BigInt   @default(10737418240) // 10 GB default quota
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions            Session[]
+  fileRecords         FileRecord[]
+  uploadJobs          UploadJob[]
+  downloadEvents      DownloadEvent[]
+  storageUsageMetrics StorageUsageMetric[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model FileRecord {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  originalName String
+  mimeType     String
+  size         BigInt
+  checksum     String?
+  cid          String   // Storage Node Content Identifier (CID)
+  uploadStatus String   @default("COMPLETED") // UPLOADING, COMPLETED, FAILED
+  visibility   String   @default("PRIVATE")   // PRIVATE, PUBLIC
+  category     String   @default("OTHER")     // IMAGE, VIDEO, AUDIO, DOCUMENT, ARCHIVE, OTHER
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  downloadEvents DownloadEvent[]
+  uploadJobs     UploadJob[]
+
+  @@index([userId])
+  @@index([cid])
+  @@index([category])
+}
+
+model UploadJob {
+  id            String   @id @default(uuid())
+  userId        String
+  fileRecordId  String?
+  totalBytes    BigInt
+  uploadedBytes BigInt   @default(0)
+  status        String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileRecord FileRecord? @relation(fields: [fileRecordId], references: [id], onDelete: SetNull)
+}
+
+model DownloadEvent {
+  id              String   @id @default(uuid())
+  userId          String
+  fileRecordId    String
+  bytesDownloaded BigInt
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileRecord FileRecord @relation(fields: [fileRecordId], references: [id], onDelete: Cascade)
+}
+
+model StorageUsageMetric {
+  id        String   @id @default(uuid())
+  userId    String
+  bytesUsed BigInt
+  fileCount Int
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

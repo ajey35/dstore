@@ -6,7 +6,7 @@ interface AuthContextType {
     session: AuthSession | null;
     isLoading: boolean;
     isAuthenticated: boolean;
-    login: (peerId: string) => Promise<void>;
+    login: (profile: Pick<User, 'name' | 'email'>, peerId: string) => Promise<void>;
     logout: () => void;
     updateUser: (user: User) => void;
 }
@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
     }, []);
 
-    const login = useCallback(async (peerId: string) => {
+    const login = useCallback(async (profile: Pick<User, 'name' | 'email'>, peerId: string) => {
         setIsLoading(true);
         try {
             // Generate session token
@@ -54,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const newUser: User = {
                 id: peerId,
                 peerId,
+                name: profile.name,
+                email: profile.email,
                 createdAt: Date.now(),
                 storageQuota: 2 * 1024 * 1024 * 1024, // 2TB default
                 storageUsed: 0,

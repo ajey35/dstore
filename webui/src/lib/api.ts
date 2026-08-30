@@ -104,6 +104,7 @@ export class ArchivistApiClient {
 
     try {
       const xhr = new XMLHttpRequest();
+      const startedAt = Date.now();
       const uploadProgress: UploadProgress = {
         fileId: Math.random().toString(36).substring(7),
         fileName: file.name,
@@ -117,7 +118,8 @@ export class ArchivistApiClient {
         xhr.upload.addEventListener('progress', (event) => {
           if (event.lengthComputable) {
             const progress = (event.loaded / event.total) * 100;
-            const speed = event.loaded / ((Date.now() - xhr.startTime) / 1000);
+            const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
+            const speed = event.loaded / elapsedSeconds;
             const eta = (event.total - event.loaded) / speed;
 
             uploadProgress.progress = progress;
@@ -158,7 +160,6 @@ export class ArchivistApiClient {
         xhr.open('POST', `${this.baseUrl}/data`);
         xhr.setRequestHeader('Content-Disposition', `attachment; filename="${file.name}"`);
         xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-        xhr.startTime = Date.now();
         xhr.send(file);
       });
     } finally {

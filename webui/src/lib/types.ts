@@ -80,6 +80,7 @@ export interface AuthSession {
 
 export interface User {
   id: string;
+  name?: string;
   email?: string;
   peerId: string;
   createdAt: number;

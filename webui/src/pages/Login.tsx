@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { FormEvent, useCallback, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNodeInfo } from '../hooks/useArchivistApi';
 import '../styles/Login.css';
@@ -7,29 +7,41 @@ export function Login() {
     const { login, isLoading: authLoading } = useAuth();
     const { data: nodeInfo, isLoading: nodeLoading, error: nodeError } = useNodeInfo();
     const [error, setError] = useState<string | null>(null);
+    const [mode, setMode] = useState<'signup' | 'signin'>('signup');
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
 
-    const handleConnect = useCallback(async () => {
+    const handleConnect = useCallback(async (event: FormEvent) => {
+        event.preventDefault();
         try {
             setError(null);
+            if (mode === 'signup' && !name.trim()) {
+                setError('Enter your name to create your storage profile.');
+                return;
+            }
+            if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email)) {
+                setError('Enter a valid email address.');
+                return;
+            }
             if (!nodeInfo?.id) {
                 setError('Unable to connect to storage node. Please ensure the node is running.');
                 return;
             }
-            await login(nodeInfo.id);
+            await login({ name: name.trim() || email.split('@')[0], email: email.trim() }, nodeInfo.id);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             setError(`Connection failed: ${message}`);
         }
-    }, [nodeInfo, login]);
+    }, [nodeInfo, login, mode, name, email]);
 
     return (
         <div className="login-shell">
             <div className="login-container">
                 <div className="login-card">
                     <div className="login-header">
-                        <div className="login-logo">A</div>
+                        <div className="login-logo">⌁</div>
                         <h1>Archivist</h1>
-                        <p className="login-subtitle">Decentralized Storage Network</p>
+                        <p className="login-subtitle">Storage that stays yours</p>
                     </div>
 
                     <div className="login-content">
@@ -49,50 +61,33 @@ export function Login() {
                                 </p>
                             </div>
                         ) : (
-                            <>
-                                <div className="login-node-info">
-                                    <h3>Node Information</h3>
-                                    <div className="info-item">
-                                        <span className="info-label">Peer ID</span>
-                                        <code className="info-value">{nodeInfo?.id ? nodeInfo.id.substring(0, 20) : '...'}...</code>
-                                    </div>
-                                    {nodeInfo?.archivist && (
-                                        <div className="info-item">
-                                            <span className="info-label">Version</span>
-                                            <span className="info-value">{nodeInfo.archivist.version}</span>
-                                        </div>
-                                    )}
-                                    <div className="info-item">
-                                        <span className="info-label">Addresses</span>
-                                        <div className="info-addresses">
-                                            {(nodeInfo?.addrs || []).slice(0, 2).map((addr) => (
-                                                <code key={addr} className="info-addr">{addr}</code>
-                                            ))}
-                                        </div>
-                                    </div>
+                            <form onSubmit={handleConnect}>
+                                <div className="auth-tabs" role="tablist" aria-label="Account action">
+                                    <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button>
+                                    <button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button>
                                 </div>
-
+                                <p className="auth-intro">{mode === 'signup' ? 'Set up your private storage profile in under a minute.' : 'Welcome back. Connect to your storage space.'}</p>
+                                {mode === 'signup' && <label className="field-label">Your name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="Alex Morgan" autoComplete="name" /></label>}
+                                <label className="field-label">Email address<input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" autoComplete="email" /></label>
                                 {error && (
                                     <div className="login-error-box">
                                         <p>{error}</p>
                                     </div>
                                 )}
-
                                 <button
+                                    type="submit"
                                     className="login-button primary"
-                                    onClick={handleConnect}
                                     disabled={authLoading}
                                 >
-                                    {authLoading ? 'Connecting...' : 'Connect to Network'}
+                                    {authLoading ? 'Connecting your space...' : mode === 'signup' ? 'Create my storage space' : 'Open my storage space'}
                                 </button>
-                            </>
+                                <div className="connected-node"><span className="online-dot" /> Network ready · node {nodeInfo?.id?.slice(0, 12)}…</div>
+                            </form>
                         )}
                     </div>
 
                     <div className="login-footer">
-                        <p>
-                            Your data is encrypted and stored across a global network of independent nodes.
-                        </p>
+                        <p>Your profile is saved in this browser. File storage, transfers and availability are powered by the connected Archivist node.</p>
                     </div>
                 </div>
 
