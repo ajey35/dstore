@@ -1,0 +1,33 @@
+// Tauri command handlers
+
+pub mod archive;
+pub mod chat;
+pub mod files;
+pub mod irc;
+pub mod media;
+pub mod node;
+pub mod peers;
+pub mod streaming;
+pub mod sync;
+pub mod system;
+pub mod torrent;
+
+// Re-export all commands for registration
+pub use archive::*;
+pub use chat::*;
+pub use files::*;
+pub use irc::*;
+pub use media::*;
+pub use node::*;
+pub use peers::*;
+pub use streaming::*;
+pub use sync::*;
+pub use system::*;
+pub use torrent::*;
+
+// Marketplace commands
+pub mod marketplace;
+pub mod wallet;
+
+pub use marketplace::*;
+pub use wallet::*;

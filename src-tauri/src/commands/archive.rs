@@ -1,0 +1,129 @@
+use crate::error::Result;
+use crate::services::archive_viewer::ViewerStatus;
+use crate::services::web_archive::{ArchiveOptions, ArchiveQueueState, ArchivedSite};
+use crate::state::AppState;
+use tauri::State;
+
+/// Queue a new web archive task
+#[tauri::command]
+pub async fn queue_web_archive(
+    state: State<'_, AppState>,
+    options: ArchiveOptions,
+) -> Result<String> {
+    let mut archive = state.web_archive.write().await;
+    archive.queue_archive(options)
+}
+
+/// Get the current archive queue state
+#[tauri::command]
+pub async fn get_archive_queue(state: State<'_, AppState>) -> Result<ArchiveQueueState> {
+    let archive = state.web_archive.read().await;
+    Ok(archive.get_queue_state())
+}
+
+/// Cancel an active archive task
+#[tauri::command]
+pub async fn cancel_web_archive(state: State<'_, AppState>, task_id: String) -> Result<()> {
+    let mut archive = state.web_archive.write().await;
+    archive.cancel_archive(&task_id)
+}
+
+/// Pause an active archive task
+#[tauri::command]
+pub async fn pause_web_archive(state: State<'_, AppState>, task_id: String) -> Result<()> {
+    let mut archive = state.web_archive.write().await;
+    archive.pause_archive(&task_id)
+}
+
+/// Resume a paused archive task
+#[tauri::command]
+pub async fn resume_web_archive(state: State<'_, AppState>, task_id: String) -> Result<()> {
+    let mut archive = state.web_archive.write().await;
+    archive.resume_archive(&task_id)
+}
+
+/// Remove a completed/failed/cancelled task from the queue
+#[tauri::command]
+pub async fn remove_archive_task(state: State<'_, AppState>, task_id: String) -> Result<()> {
+    let mut archive = state.web_archive.write().await;
+    archive.remove_task(&task_id)
+}
+
+/// Clear all completed/failed/cancelled archive tasks
+#[tauri::command]
+pub async fn clear_completed_archives(state: State<'_, AppState>) -> Result<()> {
+    let mut archive = state.web_archive.write().await;
+    archive.clear_completed();
+    Ok(())
+}
+
+/// Get list of archived sites
+#[tauri::command]
+pub async fn get_archived_sites(state: State<'_, AppState>) -> Result<Vec<ArchivedSite>> {
+    let archive = state.web_archive.read().await;
+    Ok(archive.get_archived_sites())
+}
+
+/// Open the archive viewer for a given CID. Downloads ZIP, extracts, starts server.
+/// Returns the viewer URL pointing to the correct starting page.
+/// If `url` is provided, the viewer navigates to the matching path in the archive.
+#[tauri::command]
+pub async fn open_archive_viewer(
+    state: State<'_, AppState>,
+    cid: String,
+    url: Option<String>,
+) -> Result<String> {
+    let mut viewer = state.archive_viewer.write().await;
+    viewer.open_archive(&cid, url.as_deref()).await
+}
+
+/// Open the archive viewer from a locally saved ZIP. Extracts to a temp dir
+/// and serves without going through the archivist node. Used to preview a
+/// freshly scraped archive before (or without) uploading it.
+#[tauri::command]
+pub async fn open_archive_viewer_local(
+    state: State<'_, AppState>,
+    local_path: String,
+    url: Option<String>,
+) -> Result<String> {
+    let mut viewer = state.archive_viewer.write().await;
+    viewer
+        .open_archive_from_path(std::path::Path::new(&local_path), url.as_deref())
+        .await
+}
+
+/// Close the archive viewer and clean up extracted files.
+#[tauri::command]
+pub async fn close_archive_viewer(state: State<'_, AppState>) -> Result<()> {
+    let mut viewer = state.archive_viewer.write().await;
+    viewer.close_archive();
+    Ok(())
+}
+
+/// Upload a locally saved archive ZIP to the archivist node
+#[tauri::command]
+pub async fn upload_archive_to_node(
+    state: State<'_, AppState>,
+    local_path: String,
+) -> Result<String> {
+    let mut archive = state.web_archive.write().await;
+    archive.upload_archive_to_node(&local_path).await
+}
+
+/// Detect if a URL is a Discourse forum
+#[tauri::command]
+pub async fn detect_discourse_forum(url: String) -> Result<bool> {
+    Ok(crate::services::discourse_scraper::DiscourseScraper::detect_discourse(&url).await)
+}
+
+/// Get the current archive viewer status.
+#[tauri::command]
+pub async fn get_archive_viewer_status(state: State<'_, AppState>) -> Result<Option<ViewerStatus>> {
+    let viewer = state.archive_viewer.read().await;
+    let status = viewer.get_status();
+    if status.running {
+        Ok(Some(status))
+    } else {
+        Ok(None)
+    }
+}

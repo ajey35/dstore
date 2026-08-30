@@ -1,0 +1,172 @@
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useSoundNotifications } from './hooks/useSoundNotifications';
+import { useBackgroundMusic } from './hooks/useBackgroundMusic';
+import { useOnboarding } from './hooks/useOnboarding';
+import { useDeveloperMode } from './contexts/DeveloperModeContext';
+import NavAccordion from './components/NavAccordion';
+import Onboarding from './pages/Onboarding';
+import Dashboard from './pages/Dashboard';
+import Files from './pages/Files';
+import Peers from './pages/Peers';
+import Devices from './pages/Devices';
+import AddDevice from './pages/AddDevice';
+import Logs from './pages/Logs';
+import Settings from './pages/Settings';
+import MediaDownload from './pages/MediaDownload';
+import MediaPlayer from './pages/MediaPlayer';
+import WebArchive from './pages/WebArchive';
+import Torrents from './pages/Torrents';
+import Marketplace from './pages/Marketplace';
+import Deals from './pages/Deals';
+import Wallet from './pages/Wallet';
+import logoSvg from './assets/logo.svg';
+import './styles/App.css';
+
+const REDIRECT_AFTER_ONBOARDING_KEY = 'archivist_redirect_to_dashboard';
+
+// Component that handles redirect after onboarding (must be inside Router)
+function OnboardingRedirect() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const shouldRedirect = localStorage.getItem(REDIRECT_AFTER_ONBOARDING_KEY);
+    if (shouldRedirect === 'true') {
+      localStorage.removeItem(REDIRECT_AFTER_ONBOARDING_KEY);
+      // Only redirect if not already on dashboard
+      if (location.pathname !== '/') {
+        navigate('/', { replace: true });
+      }
+    }
+  }, [navigate, location.pathname]);
+
+  return null;
+}
+
+function AppInner() {
+  const { developerMode } = useDeveloperMode();
+
+  return (
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <OnboardingRedirect />
+      <div className="app">
+        <aside className="sidebar">
+          <div className="logo">
+            <img src={logoSvg} alt="Archivist" className="logo-img" />
+            <span className="logo-text">Archivist</span>
+          </div>
+          <nav className="nav">
+            <NavLink to="/" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Dashboard
+            </NavLink>
+
+            {/* Archivist P2P Network */}
+            <div className="nav-section-label">Archivist P2P Network</div>
+            <NavLink to="/peers" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Connect Peers
+            </NavLink>
+            <NavLink to="/devices" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Devices
+            </NavLink>
+            <NavLink to="/files" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Upload & Download
+            </NavLink>
+
+            {/* Marketplace */}
+            <div className="nav-section-label">Marketplace</div>
+            <NavLink to="/marketplace" end className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Make a Deal
+            </NavLink>
+            <NavLink to="/marketplace/deals" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              My Deals
+            </NavLink>
+            <NavLink to="/wallet" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Wallet
+            </NavLink>
+
+            {/* Archiving Tools */}
+            <div className="nav-section-label">Archiving Tools</div>
+            <NavLink to="/media" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Media Downloader
+            </NavLink>
+            <NavLink to="/web-archive" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Website Scraper
+            </NavLink>
+            <NavLink to="/torrents" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+              Torrents
+            </NavLink>
+
+            {/* Advanced section — collapsible, contains Settings and (dev mode) Logs */}
+            <NavAccordion title="Advanced" storageKey="nav-advanced-open" defaultOpen={false}>
+              <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                Settings
+              </NavLink>
+              {developerMode && (
+                <NavLink to="/logs" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+                  Logs
+                </NavLink>
+              )}
+            </NavAccordion>
+          </nav>
+        </aside>
+
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/files" element={<Files />} />
+            <Route path="/peers" element={<Peers />} />
+            <Route path="/devices" element={<Devices />} />
+            <Route path="/devices/add" element={<AddDevice />} />
+            <Route path="/logs" element={<Logs />} />
+            <Route path="/media" element={<MediaDownload />} />
+            <Route path="/media/player/:taskId" element={<MediaPlayer />} />
+            <Route path="/web-archive" element={<WebArchive />} />
+            <Route path="/torrents" element={<Torrents />} />
+            <Route path="/settings" element={<Settings />} />
+
+            {/* Marketplace routes */}
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/marketplace/deals" element={<Deals />} />
+            <Route path="/wallet" element={<Wallet />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  );
+}
+
+function App() {
+  useSoundNotifications(); // Enable sound notifications globally
+  const { startMusic } = useBackgroundMusic(); // Global background music
+  const { showOnboarding, loading, completeOnboarding } = useOnboarding();
+
+  // Wrapper for completeOnboarding that sets redirect flag
+  const handleCompleteOnboarding = () => {
+    localStorage.setItem(REDIRECT_AFTER_ONBOARDING_KEY, 'true');
+    completeOnboarding();
+  };
+
+  // Show loading state while checking onboarding status
+  if (loading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner" />
+      </div>
+    );
+  }
+
+  // Show onboarding — splash + disclaimer + welcome play on every launch,
+  // setup steps (wallet/folder/syncing) only on first run.
+  if (showOnboarding) {
+    return (
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Onboarding onComplete={handleCompleteOnboarding} startMusic={startMusic} />
+      </Router>
+    );
+  }
+
+  return <AppInner />;
+}
+
+export default App;

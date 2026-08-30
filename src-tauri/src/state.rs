@@ -1,0 +1,276 @@
+use std::net::IpAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use crate::crypto::key_store::KeyStore;
+use crate::node_api::NodeApiClient;
+use crate::services::node::NodeConfig;
+use crate::services::torrent::{SeedLimitAction, SeedingRules, TorrentConfig, TorrentService};
+use crate::services::{
+    ArchiveViewerServer, BackupDaemon, BackupService, ChatServer, ChatService, ConfigService,
+    FileService, IrcService, ManifestRegistry, ManifestServer, ManifestServerConfig,
+    MarketplaceService, MediaDownloadService, MediaStreamingConfig, MediaStreamingServer,
+    NodeService, PeerService, SyncService, WalletService, WebArchiveService,
+};
+
+/// Global application state managed by Tauri
+pub struct AppState {
+    pub node: Arc<RwLock<NodeService>>,
+    pub files: Arc<RwLock<FileService>>,
+    pub sync: Arc<RwLock<SyncService>>,
+    pub peers: Arc<RwLock<PeerService>>,
+    pub config: Arc<RwLock<ConfigService>>,
+    pub backup: Arc<RwLock<BackupService>>,
+    pub backup_daemon: Arc<BackupDaemon>,
+    pub manifest_registry: Arc<RwLock<ManifestRegistry>>,
+    pub manifest_server: Arc<RwLock<ManifestServer>>,
+    pub media: Arc<RwLock<MediaDownloadService>>,
+    pub media_streaming: Arc<RwLock<MediaStreamingServer>>,
+    pub web_archive: Arc<RwLock<WebArchiveService>>,
+    pub archive_viewer: Arc<RwLock<ArchiveViewerServer>>,
+    pub chat: Arc<RwLock<ChatService>>,
+    pub chat_server: Arc<RwLock<ChatServer>>,
+    pub marketplace: Arc<RwLock<MarketplaceService>>,
+    pub wallet: Arc<RwLock<WalletService>>,
+    pub torrent: Arc<RwLock<TorrentService>>,
+    pub irc: Arc<RwLock<IrcService>>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        // Load persisted configuration
+        let mut config_service = ConfigService::new();
+        let app_config = {
+            let mut cfg = config_service.get();
+            // Migrate: ensure token contract matches the active network's default
+            let expected_token = cfg.blockchain.active_network.default_token_contract();
+            if cfg.blockchain.token_contract != expected_token {
+                log::info!(
+                    "Config migration: updating token contract from {} to {} for {:?}",
+                    cfg.blockchain.token_contract,
+                    expected_token,
+                    cfg.blockchain.active_network
+                );
+                cfg.blockchain.token_contract = expected_token.to_string();
+                let _ = config_service.update(cfg.clone());
+            }
+
+            // Migrate: clear repo when upgrading from a different app version.
+            // Sidecar binary upgrades can change the block encoding, leaving old
+            // manifest blocks unreadable ("Cid doesn't match the data").
+            let current_version = env!("CARGO_PKG_VERSION");
+            let previous_version = cfg.data_version.as_deref().unwrap_or("unknown");
+            if previous_version != current_version {
+                let repo_dir = std::path::Path::new(&cfg.node.data_directory).join("repo");
+                if repo_dir.exists() {
+                    // Note: log plugin is not yet initialized at this point, so use eprintln
+                    eprintln!(
+                        "[archivist] App version changed ({} -> {}), clearing block store at {} to avoid manifest corruption",
+                        previous_version,
+                        current_version,
+                        repo_dir.display()
+                    );
+                    if let Err(e) = std::fs::remove_dir_all(&repo_dir) {
+                        eprintln!("[archivist] Failed to clear repo directory: {}", e);
+                    }
+                }
+                cfg.data_version = Some(current_version.to_string());
+                let _ = config_service.update(cfg.clone());
+            }
+
+            cfg
+        };
+
+        // Create NodeConfig from persisted settings, with network-appropriate sidecar binary
+        let mut node_config = NodeConfig::from_node_settings(&app_config.node);
+        node_config.sidecar_name =
+            NodeConfig::sidecar_name_for_network(app_config.blockchain.active_network);
+
+        log::info!(
+            "Initializing NodeService with config: api_port={}, discovery_port={}, listen_port={}, data_dir={}",
+            node_config.api_port,
+            node_config.discovery_port,
+            node_config.listen_port,
+            node_config.data_dir
+        );
+
+        // Create shared peer service for backup
+        let peers = Arc::new(RwLock::new(PeerService::new()));
+
+        // Create API client for backup service
+        let api_client = NodeApiClient::new(node_config.api_port);
+
+        // Create marketplace and wallet services
+        let marketplace_service = MarketplaceService::new(api_client.clone());
+        let keystore_dir = dirs::config_dir()
+            .map(|p| p.join("archivist"))
+            .unwrap_or_else(|| std::path::PathBuf::from(".archivist"));
+        let wallet_service = WalletService::new(
+            api_client.clone(),
+            app_config.blockchain.network.clone(),
+            app_config.blockchain.rpc_url.clone(),
+            app_config.blockchain.token_contract.clone(),
+            keystore_dir,
+        );
+
+        // Create backup service with API client and peer service
+        let backup_service = BackupService::new(api_client.clone(), peers.clone());
+
+        // Create backup daemon with API client and config
+        let backup_daemon = Arc::new(BackupDaemon::new(
+            api_client,
+            app_config.backup_server.enabled,
+            app_config.backup_server.poll_interval_secs,
+            app_config.backup_server.max_concurrent_downloads,
+            app_config.backup_server.max_retries,
+            app_config.backup_server.auto_delete_tombstones,
+            app_config.backup_server.trigger_port,
+        ));
+
+        // Source peers will be configured when backup daemon starts (in lib.rs setup)
+
+        // Create manifest registry (shared between sync service and manifest server)
+        let manifest_registry = Arc::new(RwLock::new(ManifestRegistry::new()));
+
+        // Create sync service with manifest registry for auto-registration
+        let sync_service = SyncService::with_manifest_registry(manifest_registry.clone());
+
+        // Create manifest server with config from settings
+        let mut allowed_ips = std::collections::HashSet::new();
+        for ip_str in &app_config.manifest_server.allowed_ips {
+            if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                allowed_ips.insert(ip);
+            } else {
+                log::warn!(
+                    "Invalid IP address in manifest_server.allowed_ips: {}",
+                    ip_str
+                );
+            }
+        }
+
+        let manifest_server_config = ManifestServerConfig {
+            port: app_config.manifest_server.port,
+            enabled: app_config.manifest_server.enabled,
+            allowed_ips,
+        };
+
+        let manifest_server =
+            ManifestServer::with_config(manifest_registry.clone(), manifest_server_config);
+        let manifest_server = Arc::new(RwLock::new(manifest_server));
+
+        // Create media download service
+        let media_service =
+            MediaDownloadService::new(app_config.media_download.max_concurrent_downloads);
+        let media = Arc::new(RwLock::new(media_service));
+
+        // Create media streaming server (shares media download service for library)
+        let streaming_config = MediaStreamingConfig {
+            port: app_config.media_streaming.port,
+        };
+        let media_streaming = Arc::new(RwLock::new(MediaStreamingServer::new(
+            streaming_config,
+            media.clone(),
+        )));
+
+        // Create web archive service with history persistence
+        let web_archive_data_dir = dirs::data_dir()
+            .map(|p| p.join("archivist"))
+            .unwrap_or_else(|| std::path::PathBuf::from(".archivist"));
+        let web_archive = Arc::new(RwLock::new(WebArchiveService::with_history(
+            app_config.web_archive.max_concurrent_archives,
+            app_config.node.api_port,
+            web_archive_data_dir,
+        )));
+
+        // Create archive viewer server
+        let archive_viewer = Arc::new(RwLock::new(ArchiveViewerServer::new(
+            app_config.web_archive.viewer_port,
+            app_config.node.api_port,
+        )));
+
+        // Create chat service (crypto + messaging)
+        let chat_base_dir = dirs::data_dir()
+            .map(|p| p.join("archivist").join("chat"))
+            .unwrap_or_else(|| std::path::PathBuf::from(".archivist/chat"));
+
+        let chat_port = app_config.chat.port;
+        let key_store =
+            Arc::new(KeyStore::new(&chat_base_dir).expect("Failed to initialize chat key store"));
+
+        // Load or create TLS identity
+        let tls_identity = crate::services::chat_tls::load_or_create_tls_identity(
+            &key_store.cert_path(),
+            &key_store.key_path(),
+            "pending-peer-id", // Will be updated when node starts
+        )
+        .expect("Failed to initialize chat TLS identity");
+
+        let chat_service = ChatService::new(
+            key_store.clone(),
+            "pending-peer-id".to_string(),
+            tls_identity.fingerprint.clone(),
+            &app_config.chat,
+        )
+        .expect("Failed to initialize chat service");
+
+        let chat = Arc::new(RwLock::new(chat_service));
+
+        let chat_server = Arc::new(RwLock::new(ChatServer::new(
+            chat_port,
+            key_store.cert_path().to_string_lossy().to_string(),
+            key_store.key_path().to_string_lossy().to_string(),
+        )));
+
+        // Create torrent service
+        let torrent_config = TorrentConfig {
+            download_directory: app_config.torrent.download_directory.clone(),
+            listen_port_start: app_config.torrent.listen_port_start,
+            listen_port_end: app_config.torrent.listen_port_end,
+            enable_dht: app_config.torrent.enable_dht,
+            enable_upnp: app_config.torrent.enable_upnp,
+            sequential_by_default: app_config.torrent.sequential_by_default,
+        };
+        let torrent_seeding_rules = SeedingRules {
+            max_ratio: app_config.torrent.max_seed_ratio,
+            max_seed_time_minutes: app_config.torrent.max_seed_time_minutes,
+            action_on_limit: if app_config.torrent.remove_on_seed_limit {
+                SeedLimitAction::Remove
+            } else {
+                SeedLimitAction::Pause
+            },
+        };
+        let torrent_service = TorrentService::new(torrent_config, torrent_seeding_rules);
+        let torrent = Arc::new(RwLock::new(torrent_service));
+
+        let irc_service = IrcService::new(app_config.irc.clone());
+        let irc = Arc::new(RwLock::new(irc_service));
+
+        Self {
+            node: Arc::new(RwLock::new(NodeService::with_config(node_config))),
+            files: Arc::new(RwLock::new(FileService::new())),
+            sync: Arc::new(RwLock::new(sync_service)),
+            peers,
+            config: Arc::new(RwLock::new(config_service)),
+            backup: Arc::new(RwLock::new(backup_service)),
+            backup_daemon,
+            manifest_registry,
+            manifest_server,
+            media,
+            media_streaming,
+            web_archive,
+            archive_viewer,
+            chat,
+            chat_server,
+            marketplace: Arc::new(RwLock::new(marketplace_service)),
+            wallet: Arc::new(RwLock::new(wallet_service)),
+            torrent,
+            irc,
+        }
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

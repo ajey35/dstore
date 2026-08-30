@@ -1,0 +1,96 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Archivist",
+  "version": "0.2.5",
+  "identifier": "storage.archivist.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Archivist",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "visible": true
+      }
+    ],
+    "trayIcon": {
+      "id": "main-tray",
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "tooltip": "Archivist - Decentralized Storage"
+    },
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost data: https:; media-src 'self' asset: https://asset.localhost blob: data: http://127.0.0.1:8087; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com https://github.com http://127.0.0.1:8080 http://127.0.0.1:8087 http://127.0.0.1:8088 https:; frame-src http://127.0.0.1:8088"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFFQzM4M0E3Q0RCRkQzRTcKUldUbjA3L05wNFBESHRRWlc4bUxqTWhoMm1lLytueU41ZTZaejg0UW9GdlhqbWZOcVI2bkRIcFgK",
+      "endpoints": [
+        "https://github.com/durability-labs/archivist-desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "sidecars/archivist"
+    ],
+    "resources": {
+      "resources/intro.webm": "./",
+      "resources/intro.mp4": "./",
+      "resources/ripe-fruit.mp3": "./"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "Decentralized File Storage",
+    "longDescription": "Archivist is a decentralized file storage and P2P sync application for secure, distributed data management.",
+    "copyright": "Copyright © 2026 Durability Labs",
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": [
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-plugins-ugly",
+          "gstreamer1.0-libav"
+        ],
+        "postInstallScript": "scripts/postinst.sh"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installerHooks": "scripts/nsis-hooks.nsi"
+      }
+    }
+  }
+}

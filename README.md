@@ -1,0 +1,492 @@
+# Archivist Desktop
+
+A cross-platform desktop application for decentralized file storage, built with Tauri v2, React, and TypeScript.
+
+> **WARNING: Alpha Software - Pilot Program**
+>
+> This software is in **alpha stage** and is part of the pilot program. **Do not use this for mission-critical data or personal files that you cannot afford to lose.**
+>
+> - Data loss may occur due to bugs, incomplete features, or network issues
+> - There is no guarantee of data persistence or recovery
+> - Always maintain separate backups of important files
+> - This software is provided "as-is" without warranty of any kind
+>
+> By using this software, you acknowledge and accept these risks.
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/01-dashboard-basic.png" alt="Dashboard" width="800">
+</p>
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/19-onboarding-welcome.png" alt="Welcome" width="260"><br><b>Onboarding</b></td>
+    <td align="center"><img src="screenshots/06-wallet.png" alt="Wallet" width="260"><br><b>Wallet</b></td>
+    <td align="center"><img src="screenshots/12-folder-upload.png" alt="Folder Sync" width="260"><br><b>Folder Sync</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/04-marketplace.png" alt="Marketplace" width="260"><br><b>Marketplace</b></td>
+    <td align="center"><img src="screenshots/10-settings.png" alt="Settings" width="260"><br><b>Settings</b></td>
+    <td align="center"><img src="screenshots/09-torrents.png" alt="Torrents" width="260"><br><b>Torrents</b></td>
+  </tr>
+</table>
+
+<details>
+<summary>View all screenshots</summary>
+<br>
+See the <a href="screenshots/">screenshots/</a> directory for 22 screenshots covering every page of the app.
+</details>
+
+## Features
+
+### Core
+- **Guided Onboarding** — first-run wizard to get your first backup in under 30 seconds
+- **File Management** — upload, download, and manage files; paste a CID to auto-trigger download
+- **Folder Sync** — watch folders and automatically sync changes to the network
+- **Backup Server** — automatic continuous backup to designated peers
+- **Device Management** — My Devices overview and step-by-step Add Device wizard
+
+### Marketplace
+- **Storage Marketplace** — browse providers offering storage slots, request storage on the network; inline tooltips explain terms like collateral, slots, and proof probability
+- **My Deals** — view completed purchases and active provider slots
+- **Wallet** — Ethereum wallet with generate/import, balance tracking, and network switching (devnet/testnet)
+
+### Archiving Tools
+- **Media Downloader** — download video and audio from 100+ sites via yt-dlp, quality selection, download queue with file path chooser
+- **Media Player** — built-in video player with playlist, accessible from completed downloads
+- **Torrents** — add magnet links and .torrent files, per-file selection, speed limits
+- **Web Archive** — crawl and archive websites (including video, audio, and media assets) to decentralized storage, browse archives in-app, choose output directory
+- **Discourse Forum Archiver** — specialized archiver for Discourse forums that generates full static HTML sites from forum API data
+
+### Communication
+- **IRC Chat** — embedded IRC chat client on the Dashboard
+- **P2P Encrypted Chat** — direct peer-to-peer messaging with end-to-end encryption, group chat, and safety number verification (TOFU)
+
+### Privacy & Security
+- **Sensitive Field Toggle** — eye icon to show/hide peer IDs, SPR records, ETH addresses, API URLs, and other sensitive data (useful for streaming/screen sharing)
+- **End-to-End Encryption** — chat messages encrypted using double-ratchet sessions with forward secrecy
+- **Safety Numbers** — verify peer identities with safety number comparison
+
+### System
+- **Peer Network** — connect with peers, share SPR records, and monitor network stats
+- **Node Logs** — built-in real-time log viewer with auto-refresh and auto-scroll
+- **System Tray** — runs in the background with quick access from the system tray
+- **Auto-Update** — automatic updates from GitHub releases with `latest.json` manifest
+- **Sound Notifications** — audio feedback for node startup, peer connections, and downloads
+- **Manual Announce IP** — override UPnP with a manual public IP for NAT traversal
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18 + TypeScript + Vite |
+| Backend | Rust + Tauri v2 |
+| Sidecar | archivist-node (P2P storage daemon) |
+| Package Manager | pnpm v10 |
+| Node.js | v20 |
+| Rust | 1.77.2+ stable |
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│              Archivist Desktop (Tauri App)               │
+│                                                          │
+│  ┌────────────────────┐      ┌────────────────────────┐ │
+│  │  React Frontend    │      │   Rust Backend         │ │
+│  │  (Webview)         │◄────►│   (Native Process)     │ │
+│  │                    │ IPC  │                        │ │
+│  │ • Dashboard        │      │ • Node Management      │ │
+│  │ • Upload/Download  │      │ • File Operations      │ │
+│  │ • Marketplace      │      │ • Folder Watching      │ │
+│  │ • Wallet/Deals     │      │ • Peer Management      │ │
+│  │ • Media Download   │      │ • Backup Daemon        │ │
+│  │ • Media Player     │      │ • Media Download       │ │
+│  │ • Web Archive      │      │ • Torrent Engine       │ │
+│  │ • Torrents         │      │ • Web Archiver         │ │
+│  │ • Chat (P2P + IRC) │      │ • Chat (E2E Encrypted) │ │
+│  │ • Devices          │      │ • Wallet & Marketplace │ │
+│  │ • Settings/Logs    │      │ • Configuration        │ │
+│  └────────────────────┘      └───────────┬────────────┘ │
+│                                          │              │
+└──────────────────────────────────────────┼──────────────┘
+                                           │
+                                  HTTP (localhost:8080)
+                                           │
+┌──────────────────────────────────────────▼──────────────┐
+│           archivist-node Sidecar (Separate Process)     │
+│                                                          │
+│  • REST API (port 8080)                                 │
+│  • File Storage & CID Management                        │
+│  • P2P Network (libp2p)                                 │
+│  • Discovery (DHT/mDNS, UDP port 8090)                  │
+│  • Listen (TCP port 8070)                               │
+│  • Peer Connections                                     │
+│  • Data Replication                                     │
+└──────────────────────────────────────────┬──────────────┘
+                                           │
+                                   P2P (encrypted)
+                                           │
+                              ┌────────────▼────────────┐
+                              │   External Peers        │
+                              │   (libp2p network)      │
+                              └─────────────────────────┘
+```
+
+### How It Works
+
+1. **User Interface**: React frontend provides the UI (Dashboard, Upload/Download, Marketplace, Wallet/Deals, Media Download, Media Player, Web Archive, Torrents, Chat, Devices, Settings/Logs)
+2. **Tauri Backend**: Rust backend handles:
+   - Starting/stopping the archivist-node sidecar process
+   - Managing file system operations (uploads, downloads, folder watching)
+   - Proxying requests to the node's REST API
+   - Persisting application configuration
+   - Running the backup daemon for continuous sync
+   - Media downloads and streaming via yt-dlp/ffmpeg
+   - Torrent management (magnet links, .torrent files)
+   - Web archiving and archive viewing (including Discourse forums)
+   - Wallet and marketplace interactions
+   - P2P encrypted chat with E2E encryption and group sessions
+3. **Archivist Node**: Standalone sidecar process that:
+   - Exposes REST API on localhost:8080
+   - Manages content-addressed storage (CIDs)
+   - Handles P2P networking via libp2p
+   - Discovers peers via DHT/mDNS on UDP port 8090
+   - Accepts peer connections on TCP port 8070
+   - Replicates data across the network
+4. **P2P Network**: Encrypted libp2p connections between peers for file transfer and discovery
+
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm v10+
+- Rust 1.77.2+ stable
+- Platform-specific build dependencies (see below)
+
+#### System Dependencies
+
+Tauri requires platform-specific system libraries. Install them before running `pnpm setup`:
+
+**Linux (Fedora/RHEL)**
+```bash
+sudo dnf install gcc gcc-c++ gtk3-devel webkit2gtk4.1-devel glib2-devel \
+  libappindicator-gtk3-devel librsvg2-devel pango-devel openssl-devel
+```
+
+**Linux (Debian/Ubuntu)**
+```bash
+sudo apt install build-essential libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev libssl-dev
+```
+
+**macOS**
+```bash
+xcode-select --install
+```
+
+**Windows**
+- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with "Desktop development with C++" workload
+- WebView2 is included with Windows 10 (version 1803+) and Windows 11
+
+> For the full list of Tauri system dependencies, see the [Tauri Prerequisites](https://tauri.app/start/prerequisites/) docs.
+
+### Setup
+
+```bash
+# Quick setup (install deps + download sidecar binary)
+pnpm setup
+
+# Or step by step:
+pnpm install
+pnpm download-sidecar  # Downloads archivist-node for your platform
+
+# Run in development mode
+pnpm tauri dev
+
+# Build for production
+pnpm tauri build
+```
+
+### Cross-Platform Builds
+
+The sidecar binary must match your target platform. To download for cross-compilation:
+
+```bash
+# macOS
+bash scripts/download-sidecar.sh x86_64-apple-darwin      # Intel
+bash scripts/download-sidecar.sh aarch64-apple-darwin     # Apple Silicon
+
+# Linux
+bash scripts/download-sidecar.sh x86_64-unknown-linux-gnu   # x64
+bash scripts/download-sidecar.sh aarch64-unknown-linux-gnu  # ARM64
+
+# Windows
+bash scripts/download-sidecar.sh x86_64-pc-windows-msvc
+```
+
+> **Note**: Release builds now compile archivist-node from source (main branch) rather than downloading pre-built binaries. See `.github/workflows/release.yml` for details.
+
+### Project Structure
+
+```
+archivist-desktop/
+├── src/                          # React frontend
+│   ├── components/               # Reusable UI components
+│   │   ├── ErrorState.tsx       # Error display component
+│   │   ├── InfoTooltip.tsx      # Hover tooltip with "?" icon
+│   │   ├── IntroModal.tsx       # Intro modal overlay
+│   │   ├── IrcChat.tsx          # IRC chat widget (embedded in Dashboard)
+│   │   ├── NavAccordion.tsx     # Collapsible navigation sections
+│   │   ├── NextSteps.tsx        # Post-onboarding guidance
+│   │   ├── SafetyNumber.tsx     # Safety number verification display
+│   │   └── SensitiveField.tsx   # Show/hide toggle for sensitive data
+│   ├── contexts/                 # React Context providers
+│   │   └── ChatContext.tsx      # Global chat state management
+│   ├── hooks/                    # Custom React hooks
+│   │   ├── useNode.ts           # Node lifecycle (start/stop/status)
+│   │   ├── useSync.ts           # Folder watching + sync queue
+│   │   ├── usePeers.ts          # Peer connections
+│   │   ├── useOnboarding.ts     # First-run onboarding state
+│   │   ├── useSoundNotifications.ts  # Audio feedback
+│   │   ├── useFeatures.ts       # Feature flag detection
+│   │   ├── useMediaDownload.ts  # yt-dlp download queue + progress
+│   │   ├── useMediaStreaming.ts  # Media streaming server control
+│   │   ├── useTorrent.ts        # Torrent state management
+│   │   ├── useWebArchive.ts     # Web archive crawl + viewer
+│   │   ├── useWallet.ts         # Ethereum wallet operations
+│   │   ├── useMarketplace.ts    # Storage marketplace state
+│   │   ├── useChat.ts           # P2P chat sessions + messages
+│   │   ├── useIrc.ts            # IRC connection + messaging
+│   │   ├── useIntroModal.ts     # Intro modal display state
+│   │   └── useBackgroundMusic.ts # Background audio playback
+│   ├── pages/                    # Route components
+│   │   ├── Dashboard.tsx        # Main status overview + IRC chat
+│   │   ├── Onboarding.tsx       # First-run wizard
+│   │   ├── Files.tsx            # Upload/download/restore files
+│   │   ├── Sync.tsx             # Watched folder management
+│   │   ├── Devices.tsx          # Device management
+│   │   ├── AddDevice.tsx        # Device pairing wizard
+│   │   ├── Peers.tsx            # P2P network view
+│   │   ├── BackupServer.tsx     # Backup daemon dashboard
+│   │   ├── MediaDownload.tsx    # yt-dlp media download UI
+│   │   ├── MediaPlayer.tsx      # Built-in video player with playlist
+│   │   ├── Torrents.tsx         # Torrent management UI
+│   │   ├── WebArchive.tsx       # Website archiver and viewer
+│   │   ├── Chat.tsx             # P2P encrypted chat (not yet routed)
+│   │   ├── Marketplace.tsx      # Storage marketplace browser
+│   │   ├── Deals.tsx            # Purchases and provider slots
+│   │   ├── Wallet.tsx           # Ethereum wallet UI
+│   │   ├── Logs.tsx             # Node logs viewer
+│   │   └── Settings.tsx         # App configuration
+│   ├── lib/                      # Utilities and types
+│   │   ├── api.ts               # Node API type definitions
+│   │   ├── archiveTypes.ts      # Web archive type definitions
+│   │   ├── chatTypes.ts         # Chat protocol type definitions
+│   │   ├── cidValidation.ts     # CID format validation
+│   │   ├── contracts.ts         # Marketplace contract ABIs
+│   │   ├── features.ts          # Feature flag constants
+│   │   ├── sanitizeFilename.ts  # Filename sanitization
+│   │   └── tauri.ts             # Tauri invoke helpers
+│   ├── styles/                   # CSS files (terminal aesthetic)
+│   ├── test/                     # Frontend tests (Vitest)
+│   ├── App.tsx                   # Router + layout
+│   └── main.tsx                  # Entry point
+│
+├── src-tauri/                    # Rust backend
+│   ├── src/
+│   │   ├── main.rs              # App entry (delegates to lib.rs)
+│   │   ├── lib.rs               # Tauri setup, commands, tray
+│   │   ├── error.rs             # ArchivistError enum
+│   │   ├── state.rs             # AppState (service container)
+│   │   ├── node_api.rs          # HTTP client for sidecar
+│   │   ├── path_utils.rs        # Cross-platform path utilities
+│   │   ├── crypto/              # End-to-end encryption
+│   │   │   ├── identity.rs      # Chat identity management
+│   │   │   ├── key_store.rs     # Cryptographic key storage
+│   │   │   ├── sessions.rs      # Double-ratchet sessions
+│   │   │   ├── group_sessions.rs # Group chat encryption
+│   │   │   └── safety_numbers.rs # Safety number generation
+│   │   ├── commands/            # Tauri command handlers
+│   │   │   ├── node.rs          # start/stop/restart/status/logs
+│   │   │   ├── files.rs         # upload/download/list/delete
+│   │   │   ├── sync.rs          # watch folders, sync queue, manifests
+│   │   │   ├── peers.rs         # connect/disconnect/list
+│   │   │   ├── system.rs        # config, platform info
+│   │   │   ├── media.rs         # yt-dlp download commands
+│   │   │   ├── streaming.rs     # media streaming server
+│   │   │   ├── archive.rs       # web archive commands
+│   │   │   ├── torrent.rs       # torrent management
+│   │   │   ├── marketplace.rs   # marketplace commands
+│   │   │   ├── wallet.rs        # wallet commands
+│   │   │   ├── chat.rs          # P2P chat commands
+│   │   │   └── irc.rs           # IRC connection commands
+│   │   └── services/            # Business logic
+│   │       ├── node.rs          # Sidecar process management
+│   │       ├── sync.rs          # File watching (notify crate)
+│   │       ├── config.rs        # Settings persistence
+│   │       ├── backup_daemon.rs # Backup daemon (polls source peers)
+│   │       ├── manifest_server.rs # HTTP manifest discovery server
+│   │       ├── binary_manager.rs  # yt-dlp/ffmpeg binary management
+│   │       ├── media_download.rs  # Media download queue + progress
+│   │       ├── media_streaming.rs # HTTP media streaming server
+│   │       ├── web_archive.rs     # Website crawler and archiver
+│   │       ├── archive_viewer.rs  # Archive content viewer
+│   │       ├── discourse_scraper.rs    # Discourse forum scraper
+│   │       ├── discourse_site_builder.rs # Static site generator for forums
+│   │       ├── torrent.rs         # Torrent engine
+│   │       ├── marketplace.rs     # Storage marketplace logic
+│   │       ├── wallet.rs          # Ethereum wallet management
+│   │       ├── chat_service.rs    # Chat message + conversation logic
+│   │       ├── chat_server.rs     # WebSocket/TLS chat server
+│   │       ├── chat_message_store.rs  # Chat message persistence
+│   │       ├── chat_delivery_queue.rs # Message delivery retry
+│   │       ├── chat_tls.rs        # TLS certificate management
+│   │       ├── chat_tofu.rs       # Trust-On-First-Use verification
+│   │       └── chat_types.rs      # Chat protocol types
+│   ├── resources/               # Bundled assets (video files)
+│   ├── sidecars/                # archivist-node binaries (gitignored)
+│   ├── Cargo.toml               # Rust dependencies
+│   └── tauri.conf.json          # Tauri configuration
+│
+├── e2e/                          # End-to-end tests (WebdriverIO)
+│   ├── tests/                   # E2E test specs
+│   └── helpers.ts               # Test utilities
+│
+├── public/                       # Static assets
+│   └── logos/                   # Branding assets
+│
+├── scripts/
+│   └── download-sidecar.sh      # Downloads archivist-node binary
+│
+├── .github/workflows/
+│   ├── ci.yml                   # Tests, lint, build checks
+│   └── release.yml              # Multi-platform release (builds archivist-node from source)
+│
+└── package.json                 # npm scripts + dependencies
+```
+
+## Configuration
+
+### Config File Locations
+
+- **Linux**: `~/.config/archivist/config.toml`
+- **macOS**: `~/Library/Application Support/archivist/config.toml`
+- **Windows**: `%APPDATA%\archivist\config.toml`
+
+### Node Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `data_dir` | Platform-specific | Node data directory |
+| `api_port` | `8080` | REST API port |
+| `discovery_port` | `8090` | UDP port for DHT/mDNS peer discovery |
+| `listen_port` | `8070` | TCP port for P2P connections |
+| `max_storage_bytes` | 10 GB | Storage quota |
+| `auto_start` | `false` | Start node on app launch |
+| `auto_restart` | `true` | Restart on failure |
+
+**Note**: Configuration changes require a node restart to take effect.
+
+### Backup Server Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `false` | Enable backup daemon |
+| `poll_interval_secs` | `30` | Check for new manifests every N seconds |
+| `max_concurrent_downloads` | `3` | Parallel file downloads |
+| `max_retries` | `3` | Retry failed downloads |
+| `auto_delete_tombstones` | `true` | Process file deletions |
+
+## Network Setup
+
+The application uses multiple ports for P2P networking and backup functionality:
+
+| Port | Protocol | Purpose | Required On |
+|------|----------|---------|-------------|
+| 8070 | TCP | P2P connections and file transfers | Both machines |
+| 8090 | UDP | Discovery via DHT/mDNS | Both machines |
+| 8085 | TCP | Manifest server (backup source) | Source machine only |
+| 8086 | TCP | Backup trigger endpoint | Backup server only |
+
+**Minimum required**: Open ports 8070 (TCP) and 8090 (UDP) for basic P2P functionality.
+
+**For backup system**: Also open 8085 on the source machine and 8086 on the backup server.
+
+### Linux (UFW)
+
+```bash
+# Required for P2P
+sudo ufw allow 8070/tcp  # P2P connections
+sudo ufw allow 8090/udp  # Discovery
+
+# For backup source (Machine A)
+sudo ufw allow 8085/tcp  # Manifest server
+
+# For backup server (Machine B)
+sudo ufw allow 8086/tcp  # Backup trigger
+```
+
+### macOS
+
+The firewall will prompt you to allow connections when the app first runs. Click "Allow" to enable P2P connectivity.
+
+### Windows (PowerShell as Administrator)
+
+```powershell
+# Required for P2P
+netsh advfirewall firewall add rule name="Archivist P2P" dir=in action=allow protocol=tcp localport=8070
+netsh advfirewall firewall add rule name="Archivist Discovery" dir=in action=allow protocol=udp localport=8090
+
+# For backup source (Machine A)
+netsh advfirewall firewall add rule name="Archivist Manifest Server" dir=in action=allow protocol=tcp localport=8085
+
+# For backup server (Machine B)
+netsh advfirewall firewall add rule name="Archivist Backup Trigger" dir=in action=allow protocol=tcp localport=8086
+```
+
+If you change the ports in Settings, update your firewall rules accordingly.
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| Port 8080 in use | Change API port in Settings |
+| Sidecar not found | Run `pnpm download-sidecar` |
+| 0 addresses found | Check firewall allows ports 8090 (UDP) and 8070 (TCP) |
+| Peer connects then disconnects | Check NAT timeout, try reconnecting with fresh SPR |
+| "Check for Updates" shows error | Expected for local builds — only works after a published GitHub release |
+
+### Logs
+
+Node logs are written to:
+
+- **Linux**: `~/.local/share/archivist/node.log`
+- **macOS**: `~/Library/Application Support/archivist/node.log`
+- **Windows**: `%APPDATA%\archivist\node.log`
+
+Use the built-in Logs page for real-time viewing with auto-refresh.
+
+## Resources
+
+- **GitHub Repository**: https://github.com/durability-labs/archivist-desktop
+- **Sidecar Repository**: https://github.com/durability-labs/archivist-node
+- **Developer Documentation**: See [CLAUDE.md](CLAUDE.md) for comprehensive technical docs
+
+## Credits
+
+Special thanks to our supporters:
+
+[papersand](https://github.com/Zorlin), [savageyoda24](https://github.com/SavageYoda24), k123_tupolev, arnaud8803, vrycmyf, moudyellaz, 0xcryptonewbie, lorena96507, giuliano.mega, warfront1, cnanakos, thatben, Oxselo, emdee4570, diegomazro, pepedzekiphen, cskiraly, alisherrr, artsy_detective, johns9729, vpavlin, swahmedjavid, gilles356, netwave, putitarusa, mrorantox, ryangoree, 0xr1st4, deety_56657, hackyguru, morgan0x01, DZEKI, celestial_gul_85001, p1ge0nh8er, lajolly, Kali_Ali, marcin.czenko, corpetty, auhau, ashishkumarnaik, ladib777, wtsupmybro, egonatoura, killfacemd, pale_rider, oxchamel, .trevligt, bkomoves, robogod_42, 0xguylouis, ayoonchain_, iamAy0, sohag_sarkar, mghazwi, magnusss5276, danisharora099, neoanonymous, buray58, godlikexi, Everest, fergulati, rahullenkala, qnou, alexanderm3666, nipsysdev, shelb2830, Timothy, sdf37, alvatarmakes, iamtrev0r, samuel.ing, patrizzz, izikdepth, j_0986, awmacp, a.im, flexsurfer, Oxenosis, kali023236, toored38, .lanski, 0x01, arseniy.eth, crypto_marina, volodymyr4303, johnny.ha, akhilmanga
+
+## License
+
+MIT
+
+---
+
+*This software is provided for evaluation and testing purposes as part of the pilot program. See the warning at the top of this document regarding data safety.*

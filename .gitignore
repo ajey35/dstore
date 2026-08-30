@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Sidecar binaries (download separately)
+src-tauri/sidecars/*.exe
+src-tauri/sidecars/archivist-*
+!src-tauri/sidecars/README.md
+!src-tauri/sidecars/.gitkeep
+
+# Windows sidecar DLLs (downloaded with sidecar, needed at runtime)
+# These are tracked because they must be bundled with the app
+!src-tauri/sidecars/*.dll
+
+# Local cargo config (machine-specific paths)
+src-tauri/.cargo/
+
+# Lock files (optional - some prefer to commit these)
+# pnpm-lock.yaml
+# Cargo.lock
+
+# Test artifacts
+e2e/playwright-report/
+e2e/test-results/
+
+# Redundant documentation (consolidated into CLAUDE.md)
+ARCHIVIST-NODE-API.md
+P2P-TESTING-GUIDE.md
+P2P-TESTING-SUMMARY.md
+WINDOWS-TESTING.md
+CICD-CONTEXT.md
+SETUP_COMPLETE.md
+TEST-DIAGNOSTICS.md
+release-progress.md
+.github/CICD_SETUP.md
+Sync-Feature-Testing.md

@@ -1,0 +1,227 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        with:
+          tag_name: ${{ github.ref }}
+          name: Archivist Desktop ${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+
+  build-tauri:
+    name: Build (${{ matrix.platform }})
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            target: 'aarch64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+            target: 'x86_64-unknown-linux-gnu'
+          - platform: 'windows-latest'
+            args: ''
+            target: 'x86_64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set version from tag
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          echo "Setting version to $VERSION"
+          # Update tauri.conf.json (controls binary filenames)
+          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' src-tauri/tauri.conf.json
+          # Update package.json
+          sed -i.bak 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' package.json
+          # Update Cargo.toml
+          sed -i.bak 's/^version = "[^"]*"/version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+          rm -f src-tauri/tauri.conf.json.bak package.json.bak src-tauri/Cargo.toml.bak
+        shell: bash
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@82a92a6e8fbeee089604da2575dc567ae9ddeaab # v2.7.5
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Nim 2.2.6 (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl https://nim-lang.org/choosenim/init.sh -sSf | bash -s -- -y 2.2.6
+          echo "$HOME/.nimble/bin" >> $GITHUB_PATH
+
+      - name: Install Nim 2.2.6 (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $url = "https://nim-lang.org/download/nim-2.2.6_x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\nim.zip"
+          Expand-Archive -Path "$env:TEMP\nim.zip" -DestinationPath "$env:TEMP\nim" -Force
+          $nimDir = Get-ChildItem "$env:TEMP\nim" -Directory | Select-Object -First 1
+          echo "$($nimDir.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install CMake (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake
+
+      - name: Read pinned archivist-node commit
+        id: pinned
+        shell: bash
+        run: |
+          COMMIT="$(tr -d '[:space:]' < ARCHIVIST_NODE_COMMIT)"
+          if [[ -z "$COMMIT" ]]; then
+            echo "ERROR: ARCHIVIST_NODE_COMMIT is empty"; exit 1
+          fi
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Pinned archivist-node commit: $COMMIT"
+
+      - name: Build archivist-node sidecar from source
+        shell: bash
+        env:
+          ARCHIVIST_COMMIT: ${{ steps.pinned.outputs.commit }}
+        run: |
+          # Full clone so we can checkout a specific commit. --depth 1 would only
+          # fetch HEAD; for reproducibility we pin to ARCHIVIST_NODE_COMMIT instead.
+          git clone https://github.com/durability-labs/archivist-node.git /tmp/archivist-node
+          cd /tmp/archivist-node
+          git checkout "$ARCHIVIST_COMMIT"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+          # Build native C libraries (miniupnpc + libnatpmp)
+          NAT_VENDOR="/tmp/archivist-node/vendor/nimble/nat_traversal/vendor"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            (cd "$NAT_VENDOR/miniupnp/miniupnpc" && mingw32-make CFLAGS="-Os -fPIC" -f Makefile.mingw libminiupnpc.a) || true
+            (cd "$NAT_VENDOR/libnatpmp-upstream" && mingw32-make OS=mingw CC=gcc CFLAGS="-Wall -Os -fPIC -DWIN32 -DNATPMP_STATICLIB -DENABLE_STRNATPMPERR -DNATPMP_MAX_RETRIES=4" libnatpmp.a) || true
+          else
+            (cd "$NAT_VENDOR/miniupnp/miniupnpc" && make CFLAGS="-Os -fPIC" build/libminiupnpc.a)
+            (cd "$NAT_VENDOR/libnatpmp-upstream" && make CFLAGS="-Wall -Os -fPIC -DENABLE_STRNATPMPERR -DNATPMP_MAX_RETRIES=4" libnatpmp.a)
+          fi
+
+          # Build circom FFI (Rust dependency)
+          # On Windows, Nim links with MinGW g++ so we need GNU-compatible .a files
+          CIRCOM_DIR="vendor/nimble/circomcompat/vendor/circom-compat-ffi"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            rustup target add x86_64-pc-windows-gnu
+            (cd "$CIRCOM_DIR" && cargo build --release --target x86_64-pc-windows-gnu)
+            # Copy GNU .a to where Nim expects it (target/release/)
+            cp "$CIRCOM_DIR/target/x86_64-pc-windows-gnu/release/libcircom_compat_ffi.a" "$CIRCOM_DIR/target/release/" 2>/dev/null || \
+            cp "$CIRCOM_DIR/target/x86_64-pc-windows-gnu/release/"*.a "$CIRCOM_DIR/target/release/" 2>/dev/null || true
+          else
+            (cd "$CIRCOM_DIR" && cargo build --release)
+          fi
+
+          # Create probestack stub (needed for wasmer FFI linking)
+          printf 'void __rust_probestack(void) {}\n' > /tmp/stub.c
+          cc -c /tmp/stub.c -o /tmp/stub.o 2>/dev/null || gcc -c /tmp/stub.c -o /tmp/stub.o 2>/dev/null || true
+
+          # Build archivist-node
+          mkdir -p build
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            nim c --out:build/archivist.exe archivist.nim
+          else
+            nim c --out:build/archivist --passL:/tmp/stub.o archivist.nim
+          fi
+
+          # Copy to sidecars directory. A single binary now handles both devnet and
+          # testnet (unified after commit ba37d61 on archivist-node main), so there
+          # is no separate archivist-devnet-* copy.
+          mkdir -p $GITHUB_WORKSPACE/src-tauri/sidecars
+          TARGET="${{ matrix.target }}"
+          if [[ "$TARGET" == *"windows"* ]]; then
+            cp build/archivist.exe "$GITHUB_WORKSPACE/src-tauri/sidecars/archivist-${TARGET}.exe"
+          else
+            cp build/archivist "$GITHUB_WORKSPACE/src-tauri/sidecars/archivist-${TARGET}"
+            chmod +x "$GITHUB_WORKSPACE/src-tauri/sidecars/archivist-${TARGET}"
+          fi
+
+          echo "Sidecar built and installed:"
+          ls -lh "$GITHUB_WORKSPACE/src-tauri/sidecars/"
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@73fb865345c54760d875b94642314f8c0c894afa # v0.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+  publish-release:
+    name: Publish Release
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Release
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false
+            });
