@@ -67,7 +67,7 @@ hex = "0.4"
 regex = "1.10"
 
 # Ethereum key generation / address derivation
-k256 = { version = "0.13", features = ["ecdsa"] }
+k256 = { version = "0.14", features = ["ecdsa"] }
 sha3 = "0.10"
 
 # Chat / crypto
