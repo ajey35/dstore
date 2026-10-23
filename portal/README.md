@@ -89,3 +89,29 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 npm run build
 npm start
 ```
+
+## Docker Compose (Portal + PostgreSQL)
+
+The Compose stack runs the Next.js portal and PostgreSQL. It does not include the
+Archivist storage node; configure `STORAGE_NODE_URL` to an already-running node.
+When the node runs on the Docker host, the default URL uses
+`host.docker.internal:8080`.
+
+```bash
+cd portal
+cp .env.docker.example .env
+# Edit .env and set unique POSTGRES_PASSWORD and JWT_SECRET values.
+docker compose up --build -d
+```
+
+The portal is available at [http://localhost:3000](http://localhost:3000). The
+database is persisted in a named Docker volume and bound to localhost by
+default. `docker compose down` stops the services without deleting database
+data; `docker compose down -v` deletes the database volume.
+
+For deployment behind a reverse proxy, set `PORTAL_BIND_ADDRESS=0.0.0.0` as
+appropriate and terminate HTTPS at the proxy. Keep `.env` private, use a
+high-entropy `JWT_SECRET`, and URL-encode any special characters in
+`POSTGRES_PASSWORD` because it is also used in `DATABASE_URL`. The
+`portal-migrate` service applies the Prisma schema with `prisma db push` before
+the web service starts.
