@@ -810,19 +810,16 @@ impl NodeApiClient {
     /// If addrs is provided, it will be used to dial the peer directly.
     /// Otherwise, peer discovery will be used to find the peer.
     pub async fn connect_peer(&self, peer_id: &str, multiaddr: &str) -> Result<()> {
-        let url = format!(
-            "{}/api/archivist/v1/connect/{}?addrs={}",
-            self.base_url,
-            peer_id,
-            urlencoding::encode(multiaddr)
-        );
+        let url = format!("{}/api/archivist/v1/connect/{}", self.base_url, peer_id);
+        let mut request = self.client.get(&url).timeout(Duration::from_secs(30)); // 30 second timeout for peer connection
+
+        if !multiaddr.is_empty() {
+            request = request.query(&[("addrs[]", multiaddr)]);
+        }
 
         log::info!("Sending GET request to: {}", url);
 
-        let response = self
-            .client
-            .get(&url)
-            .timeout(Duration::from_secs(30)) // 30 second timeout for peer connection
+        let response = request
             .send()
             .await
             .map_err(|e| {
@@ -1164,5 +1161,32 @@ impl NodeApiClient {
 impl Default for NodeApiClient {
     fn default() -> Self {
         Self::new(8080)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn connect_peer_sends_address_using_array_query_parameter() {
+        let server = MockServer::start().await;
+        let multiaddr = "/ip4/192.168.1.10/tcp/8070";
+        let client = NodeApiClient {
+            client: Client::new(),
+            base_url: server.uri(),
+        };
+
+        Mock::given(method("GET"))
+            .and(path("/api/archivist/v1/connect/peer-id"))
+            .and(query_param("addrs[]", multiaddr))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        client.connect_peer("peer-id", multiaddr).await.unwrap();
     }
 }
